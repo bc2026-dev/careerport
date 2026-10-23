@@ -24,6 +24,18 @@
 <script>
 (()=>{
 // GAS予約APIの公開URLを設定してから受付を開始してください。
+const META_PIXEL_ID = '1118357640561985';
+const META_EVENTS_ENABLED = false; // 検証期間はOFF。trueでPixelを起動
+function metaTrackFormStart(){
+ if(!META_EVENTS_ENABLED || typeof window.fbq!=='function')return;
+ window.fbq('trackCustom','CareerPortFormStart');
+}
+function metaInit(){
+ if(!META_EVENTS_ENABLED)return;
+ !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+ fbq('init',META_PIXEL_ID);fbq('track','PageView');
+}
+metaInit();
 const BOOKING_API_URL = 'https://script.google.com/macros/s/AKfycbwAF5hZ4lt2aF6ce9cIkZWqqWVsWlWRdC2CU2HbSBq2UPMs5H9UZFCgbxhpFj5vqVEgww/exec';
 const qs=[
 {title:'いつごろから働きたいですか？',options:['できるだけ早く','まだ決まっていない']},
@@ -35,8 +47,8 @@ const qs=[
 let step=0,values={},name='',phone='',mode='weekday',date='',time='',band='',error='',finished=false,submitting=false,consented=false;
 let takenSlots=new Set(),availabilityLoading=false,availabilityLoaded=false,requestId='', formStarted=false, eventStepSet=new Set();
 const STORAGE_KEY='careerport_entry_draft_v1';
-function remember(){try{sessionStorage.setItem(STORAGE_KEY,JSON.stringify({step,values,name,phone,mode,date,time,band,consented,requestId,finished,at:Date.now()}));}catch(e){}}
-function recover(){try{const d=JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'null');if(!d||Date.now()-d.at>2*60*60*1000)return;step=Math.max(0,Math.min(6,d.step||0));values=d.values||{};name=d.name||'';phone=d.phone||'';mode=d.mode||'weekday';date=d.date||'';time=d.time||'';band=d.band||'';consented=!!d.consented;requestId=d.requestId||'';finished=!!d.finished;}catch(e){}}
+function remember(){try{sessionStorage.setItem(STORAGE_KEY,JSON.stringify({step,values,name,phone,mode,date,time,band,consented,requestId,finished,formStarted,at:Date.now()}));}catch(e){}}
+function recover(){try{const d=JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'null');if(!d||Date.now()-d.at>2*60*60*1000)return;step=Math.max(0,Math.min(6,d.step||0));values=d.values||{};name=d.name||'';phone=d.phone||'';mode=d.mode||'weekday';date=d.date||'';time=d.time||'';band=d.band||'';consented=!!d.consented;requestId=d.requestId||'';finished=!!d.finished;formStarted=!!d.formStarted||step>0;}catch(e){}}
 recover();
 function resetToTop(){
   if(submitting)return;
@@ -84,6 +96,7 @@ function track(name,extra={}){
   const body={kind:'event',event:name,sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),at:new Date().toISOString(),...extra};
   try{fetch(BOOKING_API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body),keepalive:true}).catch(()=>{});}catch(e){}
 }
+function getCookieValue(key){return document.cookie.split('; ').find(x=>x.startsWith(key+'='))?.slice(key.length+1)||'';}
 function getSessionId(){
   try{let k='careerport_entry_session',s=sessionStorage.getItem(k);if(!s){s=crypto.randomUUID?.()||'ss-'+Date.now()+'-'+Math.random();sessionStorage.setItem(k,s)}return s}catch(e){return 'ss-'+Date.now()}
 }
@@ -157,12 +170,15 @@ async function next(){
   if(!BOOKING_API_URL){error='受付システムに接続できません。';view();return;}
   submitting=true;view();
   requestId=requestId||(crypto.randomUUID?.()||('req-'+Date.now()+'-'+Math.random().toString(36).slice(2)));
-  const data={kind:'booking',requestId,service:'CareerPort',answers:qs.map((q,i)=>({question:q.title,answer:values[i]||''})),name,phone,bookingType:mode,bookingDate:mode==='weekday'?date:'',bookingTime:mode==='weekday'?time:'',consent:true,submittedAt:new Date().toISOString(),source:{sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}};
+  const data={kind:'booking',requestId,service:'CareerPort',answers:qs.map((q,i)=>({question:q.title,answer:values[i]||''})),name,phone,bookingType:mode,bookingDate:mode==='weekday'?date:'',bookingTime:mode==='weekday'?time:'',consent:true,submittedAt:new Date().toISOString(),source:{sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),fbc:getCookieValue('_fbc'),fbp:getCookieValue('_fbp'),ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}};
   try{
     const result=await submitBooking(data);
     if(result.ok!==true)throw new Error(result.message||'予約失敗');
     finished=true;
     track('booking_complete',{bookingType:mode});
+    if(META_EVENTS_ENABLED && typeof window.fbq==='function') {
+      window.fbq('track','Lead',{content_name:'CareerPort booking',booking_type:mode},{eventID:requestId});
+    }
   }catch(err){
     const msg=String(err.message||'');
     if(msg.includes('SLOT_TAKEN')){error='選択した日時は予約済みです。別の時間を選んでください。';availabilityLoaded=false;fetchAvailability();requestId='';}
@@ -172,7 +188,7 @@ async function next(){
   }
   submitting=false;view();
 }
-function bind(){app.querySelectorAll('[data-option]').forEach(el=>el.addEventListener('click',()=>{values[step]=qs[step].options[Number(el.dataset.option)]; if(!formStarted){formStarted=true;track('form_start')} if(!eventStepSet.has(step)){track('question_answer',{step:step+1});eventStepSet.add(step)} error='';step++;view()}));app.querySelector('#consent')?.addEventListener('change',e=>{consented=e.target.checked});app.querySelector('#age')?.addEventListener('change',e=>{values[4]=e.target.value;if(e.target.value&&!eventStepSet.has(4)){track('question_answer',{step:5});eventStepSet.add(4)}});app.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('click',()=>{mode=el.dataset.mode;error='';view()}));app.querySelectorAll('[data-band]').forEach(el=>el.addEventListener('click',()=>{band=el.dataset.band;date='';time='';error='';view()}));app.querySelectorAll('[data-date]').forEach(el=>el.addEventListener('click',()=>{date=el.dataset.date;time='';view()}));app.querySelectorAll('[data-time]').forEach(el=>el.addEventListener('click',()=>{time=el.dataset.time;view()}));app.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click',()=>{let a=el.dataset.act;if(a==='next')next();if(a==='top')resetToTop();if(a==='back'){if(step===5){name=document.querySelector('#person')?.value||name;phone=document.querySelector('#phone')?.value||phone}step=Math.max(0,step-1);error='';view()}if(a==='retrySlots'){error='';availabilityLoaded=false;fetchAvailability();view();}if(a==='restart'){step=0;values={};name='';phone='';mode='weekday';date='';time='';finished=false;view()}}))}
+function bind(){app.querySelectorAll('[data-option]').forEach(el=>el.addEventListener('click',()=>{values[step]=qs[step].options[Number(el.dataset.option)]; if(!formStarted){formStarted=true;track('form_start');metaTrackFormStart()} if(!eventStepSet.has(step)){track('question_answer',{step:step+1});eventStepSet.add(step)} error='';step++;view()}));app.querySelector('#consent')?.addEventListener('change',e=>{consented=e.target.checked});app.querySelector('#age')?.addEventListener('change',e=>{values[4]=e.target.value;if(e.target.value&&!eventStepSet.has(4)){track('question_answer',{step:5});eventStepSet.add(4)}});app.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('click',()=>{mode=el.dataset.mode;error='';view()}));app.querySelectorAll('[data-band]').forEach(el=>el.addEventListener('click',()=>{band=el.dataset.band;date='';time='';error='';view()}));app.querySelectorAll('[data-date]').forEach(el=>el.addEventListener('click',()=>{date=el.dataset.date;time='';view()}));app.querySelectorAll('[data-time]').forEach(el=>el.addEventListener('click',()=>{time=el.dataset.time;view()}));app.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click',()=>{let a=el.dataset.act;if(a==='next')next();if(a==='top')resetToTop();if(a==='back'){if(step===5){name=document.querySelector('#person')?.value||name;phone=document.querySelector('#phone')?.value||phone}step=Math.max(0,step-1);error='';view()}if(a==='retrySlots'){error='';availabilityLoaded=false;fetchAvailability();view();}if(a==='restart'){step=0;values={};name='';phone='';mode='weekday';date='';time='';finished=false;view()}}))}
 // delegate week navigation separately to avoid primary "next" button collision
 view();if(step===6&&!finished&&mode==='weekday')fetchAvailability();
 })();
