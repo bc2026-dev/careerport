@@ -25,7 +25,7 @@
 (()=>{
 // GAS予約APIの公開URLを設定してから受付を開始してください。
 const META_PIXEL_ID = '1118357640561985';
-const META_EVENTS_ENABLED = false; // 検証期間はOFF。trueでPixelを起動
+const META_EVENTS_ENABLED = true; // 検証期間はOFF。trueでPixelを起動
 function metaTrackFormStart(){
  if(!META_EVENTS_ENABLED || typeof window.fbq!=='function')return;
  window.fbq('trackCustom','CareerPortFormStart');
