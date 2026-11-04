@@ -170,15 +170,13 @@ async function next(){
   if(!BOOKING_API_URL){error='受付システムに接続できません。';view();return;}
   submitting=true;view();
   requestId=requestId||(crypto.randomUUID?.()||('req-'+Date.now()+'-'+Math.random().toString(36).slice(2)));
-  const data={kind:'booking',requestId,service:'CareerPort',answers:qs.map((q,i)=>({question:q.title,answer:values[i]||''})),name,phone,bookingType:mode,bookingDate:mode==='weekday'?date:'',bookingTime:mode==='weekday'?time:'',consent:true,submittedAt:new Date().toISOString(),source:{sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),fbc:getCookieValue('_fbc'),fbp:getCookieValue('_fbp'),ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}};
+  const data={kind:'booking',requestId,service:'CareerPort',answers:qs.map((q,i)=>({question:q.title,answer:values[i]||''})),name,phone,bookingType:mode,bookingDate:mode==='weekday'?date:'',bookingTime:mode==='weekday'?time:'',consent:true,submittedAt:new Date().toISOString(),source:{sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),fbc:getCookieValue('_fbc'),fbp:getCookieValue('_fbp'),client_user_agent:navigator.userAgent,ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}};
   try{
     const result=await submitBooking(data);
     if(result.ok!==true)throw new Error(result.message||'予約失敗');
     finished=true;
     track('booking_complete',{bookingType:mode});
-    if(META_EVENTS_ENABLED && typeof window.fbq==='function') {
-      window.fbq('track','Lead',{content_name:'CareerPort booking',booking_type:mode},{eventID:requestId});
-    }
+    // LeadはGASのCAPIからのみ送信する（SalesPortと同じ送信経路）。
   }catch(err){
     const msg=String(err.message||'');
     if(msg.includes('SLOT_TAKEN')){error='選択した日時は予約済みです。別の時間を選んでください。';availabilityLoaded=false;fetchAvailability();requestId='';}
