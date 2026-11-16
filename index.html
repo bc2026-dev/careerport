@@ -24,37 +24,25 @@
 <script>
 (()=>{
 // GAS予約APIの公開URLを設定してから受付を開始してください。
-const META_PIXEL_ID = '1118357640561985';
-const META_EVENTS_ENABLED = true; // 検証期間はOFF。trueでPixelを起動
-function metaTrackFormStart(){
- if(!META_EVENTS_ENABLED || typeof window.fbq!=='function')return;
- window.fbq('trackCustom','CareerPortFormStart');
-}
-function metaInit(){
- if(!META_EVENTS_ENABLED)return;
- !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
- fbq('init',META_PIXEL_ID);fbq('track','PageView');
-}
-metaInit();
 const BOOKING_API_URL = 'https://script.google.com/macros/s/AKfycbwAF5hZ4lt2aF6ce9cIkZWqqWVsWlWRdC2CU2HbSBq2UPMs5H9UZFCgbxhpFj5vqVEgww/exec';
 const qs=[
-{title:'今のお仕事について、どんなことを感じていますか？',options:['今のままでいいか迷っている','自分に合う仕事を知りたい','もっと良い条件で働きたい','特に決まっていない']},
-{title:'転職・就職の時期について、今のお考えに近いものを教えてください。',options:['良い仕事が見つかれば、すぐにでも','できれば1か月以内','1〜3か月以内','まだ決まっていない']},
-{title:'希望の働き方は？',options:['正社員','契約社員','アルバイト・パート','まだ決まっていない']},
-{title:'どんな働き方に興味がありますか？',options:['人と関わりながら働く仕事','技術を身につけたり、ものを作る仕事','体を動かして取り組む仕事','その他の仕事','まだ決まっていない']},
+{title:'今の仕事で「このままでいいのかな」と感じるのは、どんな点ですか？',options:['仕事内容や自分との相性','成長や今後のキャリア','収入・待遇・働き方','人間関係・職場環境','まだはっきりしない／上記以外']},
+{title:'転職・就職の希望時期はいつ頃ですか？',options:['1か月以内','1か月から3か月程度','3か月より先','まだ決めていない']},
+{title:'正社員・契約社員など、どの形で働きたいですか？',options:['正社員','契約社員','アルバイト・パート','まだ決まっていない']},
+{title:'どんな仕事に興味がありますか？（複数選択可）',options:['人と関わりながら働く仕事','技術を身につけたり、ものを作る仕事','体を動かして取り組む仕事','その他の仕事','まだ決まっていない'],multiple:true},
 {title:'年齢を教えてください',options:Array.from({length:43},(_,i)=>`${i+18}歳`)}
 ];
-let step=0,values={},name='',phone='',mode='weekday',date='',time='',band='',error='',finished=false,submitting=false,consented=false;
+let step=0,values={},name='',phone='',mode='weekday',date='',time='',band='',error='',finished=false,applicationReceived=false,submitting=false,consented=false;
 let takenSlots=new Set(),availabilityLoading=false,availabilityLoaded=false,requestId='', formStarted=false, eventStepSet=new Set();
-const STORAGE_KEY='careerport_entry_draft_v1';
-function remember(){try{sessionStorage.setItem(STORAGE_KEY,JSON.stringify({step,values,name,phone,mode,date,time,band,consented,requestId,finished,formStarted,at:Date.now()}));}catch(e){}}
-function recover(){try{const d=JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'null');if(!d||Date.now()-d.at>2*60*60*1000)return;step=Math.max(0,Math.min(6,d.step||0));values=d.values||{};name=d.name||'';phone=d.phone||'';mode=d.mode||'weekday';date=d.date||'';time=d.time||'';band=d.band||'';consented=!!d.consented;requestId=d.requestId||'';finished=!!d.finished;formStarted=!!d.formStarted||step>0;}catch(e){}}
+const STORAGE_KEY='careerport_entry_draft_v2';
+function remember(){try{sessionStorage.setItem(STORAGE_KEY,JSON.stringify({step,values,name,phone,mode,date,time,band,consented,requestId,finished,applicationReceived,formStarted,at:Date.now()}));}catch(e){}}
+function recover(){try{const d=JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'null');if(!d||Date.now()-d.at>2*60*60*1000)return;step=Math.max(0,Math.min(7,d.step||0));values=d.values||{};name=d.name||'';phone=d.phone||'';mode=d.mode||'weekday';date=d.date||'';time=d.time||'';band=d.band||'';consented=!!d.consented;requestId=d.requestId||'';finished=!!d.finished;applicationReceived=!!d.applicationReceived;formStarted=!!d.formStarted||step>0;}catch(e){}}
 recover();
 function resetToTop(){
   if(submitting)return;
   if(step>0&&!finished&&!window.confirm('入力内容を破棄して最初の質問に戻りますか？'))return;
   step=0;values={};name='';phone='';mode='weekday';date='';time='';band='';
-  error='';finished=false;submitting=false;consented=false;requestId='';
+  error='';finished=false;applicationReceived=false;submitting=false;consented=false;requestId='';
   formStarted=false;eventStepSet.clear();
   try{sessionStorage.removeItem(STORAGE_KEY)}catch(e){}
   view();window.scrollTo({top:0,behavior:'smooth'});
@@ -62,6 +50,8 @@ function resetToTop(){
 const app=document.getElementById('app');
 const params = new URLSearchParams(location.search);
 const getParam=k=>params.get(k)||'';
+function getCookieValue(key){return document.cookie.split('; ').find(x=>x.startsWith(key+'='))?.slice(key.length+1)||'';}
+function sourceData(){return {sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),fbc:getCookieValue('_fbc'),fbp:getCookieValue('_fbp'),client_user_agent:navigator.userAgent,ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}}
 const allowedSlots=Array.from({length:18},(_,i)=>`${String(10+Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`).filter(t=>t<'19:00');
 const bands=[{label:'10:00〜12:00',start:'10:00',end:'12:00'},{label:'12:00〜14:00',start:'12:00',end:'14:00'},{label:'14:00〜16:00',start:'14:00',end:'16:00'},{label:'16:00〜19:00',start:'16:00',end:'19:00'}];const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateObj=(n)=>{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+n);return d};
@@ -91,12 +81,11 @@ function track(name,extra={}){
       name === 'booking_complete' ? {lead_type:'booking',booking_type:extra.bookingType === 'flex' ? 'manual_request' : 'scheduled'} : {};
     window.gtag('event',gaNames[name],params);
   }
-  // 計測通信の失敗は予約操作を妨げない
-  if(!BOOKING_API_URL)return;
-  const body={kind:'event',event:name,sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),at:new Date().toISOString(),...extra};
+  // Meta向けのリードイベントは送信しない。GA4イベントは上で送信済み。
+  if(name==='booking_complete'||!BOOKING_API_URL)return;
+  const body={kind:'event',event:name,sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),at:new Date().toISOString(),...extra};
   try{fetch(BOOKING_API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body),keepalive:true}).catch(()=>{});}catch(e){}
 }
-function getCookieValue(key){return document.cookie.split('; ').find(x=>x.startsWith(key+'='))?.slice(key.length+1)||'';}
 function getSessionId(){
   try{let k='careerport_entry_session',s=sessionStorage.getItem(k);if(!s){s=crypto.randomUUID?.()||'ss-'+Date.now()+'-'+Math.random();sessionStorage.setItem(k,s)}return s}catch(e){return 'ss-'+Date.now()}
 }
@@ -146,48 +135,63 @@ let lastTrackedScreen = -1;
 function trackScreenOnce(){
   if(step === lastTrackedScreen || finished)return;
   lastTrackedScreen = step;
-  const event = step === 5 ? 'contact_step_view' : step === 6 ? 'booking_step_view' : '';
+  const event = step === 5 ? (applicationReceived?'application_thanks_view':'application_step_view') : step === 6 ? 'booking_step_view' : step === 7 ? 'booking_confirmation_view' : '';
   if(event && typeof window.gtag === 'function')window.gtag('event',event);
 }
-function view(){remember();trackScreenOnce();if(finished){app.innerHTML=`<div class="end"><div class="circle">✓</div><h2>お申し込みありがとうございます</h2><p>${mode==='weekday'?'電話相談のご予約が正常に完了しました。':'電話相談のお申し込みを正常に受け付けました。日時は別途ご案内いたします。'}<br>当日は10分程度、お時間を頂戴いたします。</p><div class="summary"><b>お名前：</b>${esc(name)}<br><b>電話番号：</b>${esc(phone)}<br><b>電話相談：</b>${mode==='weekday'?`${esc(date)} ${esc(time)}`:'19時以降または土日で相談（日時は別途ご案内）'}</div><p class="disclaimer">${mode==='weekday'?'担当者から事前にショートメールにてご連絡させていただく場合がございます。':'担当者からショートメールにて候補日をご連絡いたします。'}</p></div>`;return}
-const titles=[...qs.map(q=>q.title),'最後に、お名前と電話番号を教えてください','電話相談のお日にちを選んでください'];let body='';
-if(step<5){let q=qs[step];body=step===4?`<div class="field"><label for="age">年齢</label><select id="age"><option value="">選択してください</option>${q.options.map(x=>`<option value="${x}" ${values[step]===x?'selected':''}>${x}</option>`).join('')}</select></div>`:`<div class="options">${q.options.map((x,i)=>`<button class="option ${values[step]===x?'selected':''}" data-option="${i}">${esc(x)}<span class="check">${values[step]===x?'✓':'›'}</span></button>`).join('')}</div>`}
-else if(step===5){body=`<div class="field"><label for="person">お名前</label><input id="person" autocomplete="name" placeholder="例：山田 太郎" value="${esc(name)}" /></div><div class="field"><label for="phone">電話番号</label><input id="phone" inputmode="tel" type="tel" autocomplete="tel" placeholder="例：09012345678" value="${esc(phone)}"/><small>お申込み後、担当エージェントからSMSにてご連絡し、ご挨拶させていただく場合がございます。</small></div>`}
-else {body=`${mode==='weekday'?(availabilityLoaded?calendar():'<div class="muted">空き枠を確認しています…</div>'):''}<div class="choice-mode" style="margin-top:18px"><button type="button" class="choice ${mode==='flex'?'selected':''}" data-mode="flex"><strong>19時以降または土日で相談</strong><small>希望を受け付け、日時は別途ご案内します</small></button>${mode==='flex'?'<button type="button" class="choice" data-mode="weekday"><strong>平日の空き枠から選ぶ</strong></button>':''}</div>${mode==='flex'?'<div class="muted">19時以降または土日の相談は、希望を受け付けた後に日時をご案内します。</div>':''}`}
-app.innerHTML=`<div class="meta"><span>あなたに合う仕事の選択肢を、一緒に考えます。</span><span class="meta-right"><button type="button" class="top-return" data-act="top">↩ TOPに戻る</button><span>STEP ${step+1} / 7</span></span></div><div class="progressLine"><span style="width:${(step+1)/7*100}%"></span></div><h2 class="question">${titles[step]}</h2><div class="hint">${step<5?'選択するだけで回答できます。':step===5?'ご回答いただいた内容をもとに、担当エージェントがご相談をお受けします。':'ご予約のお時間に担当者からお電話いたします。所要時間は10分程度となります。'}</div>${body}${step===6?`<label class="consent"><input type="checkbox" id="consent" ${consented?'checked':''}><span><a href="privacy.html" target="_blank" rel="noopener">個人情報等の取扱い</a>を確認し、電話相談のために情報を送信することに同意します。</span></label>`:''}${error?`<p class="error">${esc(error)}</p>${step===6&&mode==='weekday'?'<button class="back" type="button" data-act="retrySlots">空き枠を再取得</button>':''}`:''}<div class="actions">${step>0?'<button class="back" data-act="back">戻る</button>':''}${step===4?'':`<button class="btn" data-act="next">${step===6?(submitting?'送信中…':'この内容で申し込む'):'次へ'}</button>`}</div>`;bind()}
+function view(){
+  remember();trackScreenOnce();
+  if(finished){app.innerHTML=`<div class="end"><div class="circle">✓</div><h2>面談日時の予約が完了しました</h2><p>ご予約の日時に担当者からお電話いたします。所要時間は10分程度です。</p><div class="summary"><b>お名前：</b>${esc(name)}<br><b>電話番号：</b>${esc(phone)}<br><b>予約日時：</b>${esc(date)} ${esc(time)}</div></div>`;return;}
+  if(applicationReceived&&step===5){app.innerHTML=`<div class="end"><div class="circle">✓</div><h2>予約申し込みありがとうございます</h2><p>お申し込みを受け付けました。<br>面談前に、担当CAより確認のSMSをお送りします。<br>具体的な面談日時は、下のボタンから選択できます。日時を今決められない場合も、お申し込みは受け付け済みです。</p><button class="btn" type="button" data-act="chooseSlot">具体的な日程を選択する</button></div>`;bind();return;}
+  const titles=[...qs.map(q=>q.title),'面談の予約を申し込む','具体的な面談日時を選ぶ','予約内容をご確認ください'];let body='';
+  if(step<5){let q=qs[step];body=step===4?`<div class="field"><label for="age">年齢</label><select id="age"><option value="">選択してください</option>${q.options.map(x=>`<option value="${x}" ${values[step]===x?'selected':''}>${x}</option>`).join('')}</select></div>`:q.multiple?`<div class="options">${q.options.map((x,i)=>{const selected=Array.isArray(values[step])&&values[step].includes(x);return `<button type="button" class="option ${selected?'selected':''}" data-multi="${i}">${esc(x)}<span class="check">${selected?'✓':'+'}</span></button>`}).join('')}</div>`:`<div class="options">${q.options.map((x,i)=>`<button class="option ${values[step]===x?'selected':''}" data-option="${i}">${esc(x)}<span class="check">${values[step]===x?'✓':'›'}</span></button>`).join('')}</div>`;}
+  else if(step===5){body=`<div class="field"><label for="person">お名前</label><input id="person" autocomplete="name" placeholder="例：山田 太郎" value="${esc(name)}" /></div><div class="field"><label for="phone">電話番号</label><input id="phone" inputmode="tel" type="tel" autocomplete="tel" placeholder="例：09012345678" value="${esc(phone)}"/><small>お申し込み後、担当者からご連絡します。申し込み完了後に具体的な面談日時を選べます。</small></div>`;}
+  else if(step===6){body=`${availabilityLoaded?calendar():'<div class="muted">空き枠を確認しています…</div>'}<div class="muted">面談の申し込みは受け付け済みです。日時を選ばずに戻っても、申し込みは取り消されません。</div>`;}
+  else {body=`<div class="summary"><b>電話相談</b><br>${esc(date)} ${esc(time)}<br><small>所要時間：約10分</small><hr><b>お名前：</b>${esc(name)}<br><b>電話番号：</b>${esc(phone)}</div>`;}
+  app.innerHTML=`<div class="meta"><span>あなたに合う仕事の選択肢を、一緒に考えます。</span><span class="meta-right"><button type="button" class="top-return" data-act="top">↩ TOPに戻る</button><span>STEP ${step+1} / 8</span></span></div><div class="progressLine"><span style="width:${(step+1)/8*100}%"></span></div><h2 class="question">${titles[step]}</h2><div class="hint">${step<5?'選択するだけで回答できます。':step===5?'お名前と電話番号を入力して、面談をお申し込みください。':step===6?'空いている日時を選択してください。':'日時と連絡先をご確認ください。'}</div>${body}${step===5?`<label class="consent"><input type="checkbox" id="consent" ${consented?'checked':''}><span><a href="privacy.html" target="_blank" rel="noopener">個人情報等の取扱い</a>を確認し、電話相談の申し込みに同意します。</span></label>`:''}${error?`<p class="error">${esc(error)}</p>${step===6?'<button class="back" type="button" data-act="retrySlots">空き枠を再取得</button>':''}`:''}<div class="actions">${step>0?'<button class="back" data-act="back">戻る</button>':''}${step===4?'':`<button class="btn" data-act="next">${step===5?(submitting?'送信中…':'予約を申し込む'):step===6?'この日時を確認する':step===7?(submitting?'送信中…':'この日時で予約を確定する'):'次へ'}</button>`}</div>`;bind();}
+
 async function next(){
   if(submitting)return;
   error='';
-  if(step<5){if(!values[step])error='回答を選択してください。'}
-  else if(step===5){name=document.querySelector('#person')?.value.trim()||'';phone=document.querySelector('#phone')?.value.replace(/[^0-9]/g,'')||'';if(!/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z\s\u3000\u30fc\u3005\u3006\u3007]+$/u.test(name))error='お名前は漢字・ひらがな・カタカナ・ローマ字で入力してください（記号・数字不可）。';else if(!/^0\d{9,10}$/.test(phone))error='正しい電話番号を入力してください。'}
-  else {consented=!!document.querySelector('#consent')?.checked;
-    if(mode==='weekday'&&(!band||!date||!time))error='時間帯・日付・時刻を選択してください。';
-    if(mode==='weekday'&&(!availabilityLoaded||takenSlots.has(date+' '+time))&&!error)error='空き枠を再度確認してください。';
-    if(!consented&&!error)error='個人情報等の取扱いへの同意が必要です。';
+  if(step<5){const answer=values[step];if(qs[step].multiple?(!Array.isArray(answer)||answer.length===0):!answer)error='回答を選択してください。';else if(!eventStepSet.has(step)){track('question_answer',{step:step+1});eventStepSet.add(step)}}
+  else if(step===5&&!applicationReceived){
+    name=document.querySelector('#person')?.value.trim()||'';phone=document.querySelector('#phone')?.value.replace(/[^0-9]/g,'')||'';
+    if(!/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z\s\u3000\u30fc\u3005\u3006\u3007]+$/u.test(name))error='お名前は漢字・ひらがな・カタカナ・ローマ字で入力してください（記号・数字不可）。';
+    else if(!/^0\d{9,10}$/.test(phone))error='正しい電話番号を入力してください。';
+    else if(!document.querySelector('#consent')?.checked)error='個人情報等の取扱いへの同意が必要です。';
   }
+  else if(step===6&&(!band||!date||!time))error='時間帯・日付・時刻を選択してください。';
+  else if(step===6&&(!availabilityLoaded||takenSlots.has(date+' '+time)))error='空き枠を再度確認してください。';
   if(error){view();return;}
-  if(step!==6){if(step===5)track('contact_completed'); step++; if(step===5&&!availabilityLoaded&&!availabilityLoading)fetchAvailability(); if(step===6){band='';date='';time='';if(!availabilityLoaded&&!availabilityLoading)fetchAvailability();}view();return;}
-  if(!BOOKING_API_URL){error='受付システムに接続できません。';view();return;}
-  submitting=true;view();
-  requestId=requestId||(crypto.randomUUID?.()||('req-'+Date.now()+'-'+Math.random().toString(36).slice(2)));
-  const data={kind:'booking',requestId,service:'CareerPort',answers:qs.map((q,i)=>({question:q.title,answer:values[i]||''})),name,phone,bookingType:mode,bookingDate:mode==='weekday'?date:'',bookingTime:mode==='weekday'?time:'',consent:true,submittedAt:new Date().toISOString(),source:{sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid:getParam('fbclid'),fbc:getCookieValue('_fbc'),fbp:getCookieValue('_fbp'),client_user_agent:navigator.userAgent,ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}};
-  try{
-    const result=await submitBooking(data);
-    if(result.ok!==true)throw new Error(result.message||'予約失敗');
-    finished=true;
-    track('booking_complete',{bookingType:mode});
-    // LeadはGASのCAPIからのみ送信する（SalesPortと同じ送信経路）。
-  }catch(err){
-    const msg=String(err.message||'');
-    if(msg.includes('SLOT_TAKEN')){error='選択した日時は予約済みです。別の時間を選んでください。';availabilityLoaded=false;fetchAvailability();requestId='';}
-    else if(msg.includes('INVALID_SLOT')){error='日程の有効期限が過ぎました。別の時間を選んでください。';availabilityLoaded=false;fetchAvailability();requestId='';}
-    else {error='受付の確認ができませんでした。続けて再送信すると重複する可能性があります。確認のうえ、再度お試しください。';}
-    console.error('CareerPort booking error',err);
+  if(step<5){step++;view();return;}
+  if(step===5&&!applicationReceived){
+    if(!BOOKING_API_URL){error='受付システムに接続できません。';view();return;}
+    submitting=true;view();requestId=requestId||(crypto.randomUUID?.()||('req-'+Date.now()+'-'+Math.random().toString(36).slice(2)));
+    const data={kind:'booking',requestId,service:'CareerPort',answers:qs.map((q,i)=>({question:q.title,answer:Array.isArray(values[i])?values[i].join('、'):(values[i]||'')})),name,phone,bookingType:'application',bookingDate:'',bookingTime:'',consent:true,submittedAt:new Date().toISOString(),source:sourceData()};
+    try{const result=await submitBooking(data);if(result.ok!==true)throw new Error(result.message||'申込失敗');applicationReceived=true;track('contact_completed');if(typeof window.gtag==='function')window.gtag('event','generate_lead',{lead_type:'application'});}
+    catch(err){error='申し込みを確認できませんでした。通信状況を確認して、もう一度お試しください。';console.error('CareerPort application error',err);}
+    submitting=false;view();return;
   }
+  if(step===6){step=7;view();return;}
+  if(step!==7||!BOOKING_API_URL)return;
+  submitting=true;view();
+  const data={kind:'booking_update',requestId,service:'CareerPort',bookingDate:date,bookingTime:time};
+  try{const result=await submitBooking(data);if(result.ok!==true)throw new Error(result.message||'予約失敗');finished=true;track('booking_complete',{bookingType:'weekday'});}
+  catch(err){const msg=String(err.message||'');if(msg.includes('SLOT_TAKEN')){error='選択した日時は埋まりました。別の日時を選んでください。';availabilityLoaded=false;fetchAvailability();step=6;}else if(msg.includes('INVALID_SLOT')){error='予約可能時間が変わりました。空き枠を再取得してください。';availabilityLoaded=false;fetchAvailability();step=6;}else{error='予約の確定を確認できませんでした。申し込みは受け付け済みです。通信状況を確認して再度お試しください。';step=6;}console.error('CareerPort booking update error',err);}
   submitting=false;view();
 }
-function bind(){app.querySelectorAll('[data-option]').forEach(el=>el.addEventListener('click',()=>{values[step]=qs[step].options[Number(el.dataset.option)]; if(!formStarted){formStarted=true;track('form_start');metaTrackFormStart()} if(!eventStepSet.has(step)){track('question_answer',{step:step+1});eventStepSet.add(step)} error='';step++;view()}));app.querySelector('#consent')?.addEventListener('change',e=>{consented=e.target.checked});app.querySelector('#age')?.addEventListener('change',e=>{values[4]=e.target.value;if(e.target.value){if(!eventStepSet.has(4)){track('question_answer',{step:5});eventStepSet.add(4)}error='';step=5;view()}});app.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('click',()=>{mode=el.dataset.mode;error='';view()}));app.querySelectorAll('[data-band]').forEach(el=>el.addEventListener('click',()=>{band=el.dataset.band;date='';time='';error='';view()}));app.querySelectorAll('[data-date]').forEach(el=>el.addEventListener('click',()=>{date=el.dataset.date;time='';view()}));app.querySelectorAll('[data-time]').forEach(el=>el.addEventListener('click',()=>{time=el.dataset.time;view()}));app.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click',()=>{let a=el.dataset.act;if(a==='next')next();if(a==='top')resetToTop();if(a==='back'){if(step===5){name=document.querySelector('#person')?.value||name;phone=document.querySelector('#phone')?.value||phone}step=Math.max(0,step-1);error='';view()}if(a==='retrySlots'){error='';availabilityLoaded=false;fetchAvailability();view();}if(a==='restart'){step=0;values={};name='';phone='';mode='weekday';date='';time='';finished=false;view()}}))}
+
+function bind(){
+  app.querySelectorAll('[data-option]').forEach(el=>el.addEventListener('click',()=>{values[step]=qs[step].options[Number(el.dataset.option)];if(!formStarted){formStarted=true;track('form_start');}if(!eventStepSet.has(step)){track('question_answer',{step:step+1});eventStepSet.add(step)}error='';step++;view()}));
+  app.querySelectorAll('[data-multi]').forEach(el=>el.addEventListener('click',()=>{const option=qs[step].options[Number(el.dataset.multi)],unknown='まだ決まっていない';let selected=Array.isArray(values[step])?[...values[step]]:[];if(option===unknown){selected=selected.includes(unknown)?[]:[unknown]}else{selected=selected.filter(x=>x!==unknown);selected=selected.includes(option)?selected.filter(x=>x!==option):[...selected,option]}values[step]=selected;if(!formStarted){formStarted=true;track('form_start');}error='';view()}));
+  app.querySelector('#consent')?.addEventListener('change',e=>{consented=e.target.checked});
+  app.querySelector('#age')?.addEventListener('change',e=>{values[4]=e.target.value;if(e.target.value){if(!eventStepSet.has(4)){track('question_answer',{step:5});eventStepSet.add(4)}error='';step=5;view()}});
+  app.querySelectorAll('[data-band]').forEach(el=>el.addEventListener('click',()=>{band=el.dataset.band;date='';time='';error='';view()}));
+  app.querySelectorAll('[data-date]').forEach(el=>el.addEventListener('click',()=>{date=el.dataset.date;time='';view()}));
+  app.querySelectorAll('[data-time]').forEach(el=>el.addEventListener('click',()=>{time=el.dataset.time;view()}));
+  app.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click',()=>{const a=el.dataset.act;if(a==='next')next();if(a==='top')resetToTop();if(a==='chooseSlot'){step=6;mode='weekday';band='';date='';time='';error='';if(!availabilityLoaded&&!availabilityLoading)fetchAvailability();view();}if(a==='back'){if(step===6&&applicationReceived){step=5;error='';view();return;}if(step===5){name=document.querySelector('#person')?.value||name;phone=document.querySelector('#phone')?.value||phone;}step=Math.max(0,step-1);error='';view();}if(a==='retrySlots'){error='';availabilityLoaded=false;fetchAvailability();view();}}));
+}
+
 // delegate week navigation separately to avoid primary "next" button collision
-view();if(step===6&&!finished&&mode==='weekday')fetchAvailability();
+view();if(step===6&&!finished&&applicationReceived&&!availabilityLoaded&&mode==='weekday')fetchAvailability();
 })();
 </script></body></html>
