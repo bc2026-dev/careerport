@@ -48,16 +48,17 @@ let step=0,values={},name='',phone='',mode='weekday',date='',time='',band='',err
 let takenSlots=new Set(),availabilityLoading=false,availabilityLoaded=false,requestId='', formStarted=false, eventStepSet=new Set();
 // Metaカスタムイベントは画面の再描画・再読み込みで重複送信しない。
 let metaFormStartSent=false,metaQuestionsCompleteSent=false;
+let cpFormStartAt='',cpQuestionsCompleteAt='';
 const STORAGE_KEY='careerport_entry_draft_v2';
-function remember(){try{sessionStorage.setItem(STORAGE_KEY,JSON.stringify({step,values,name,phone,mode,date,time,band,consented,requestId,finished,applicationReceived,formStarted,metaFormStartSent,metaQuestionsCompleteSent,at:Date.now()}));}catch(e){}}
-function recover(){try{const d=JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'null');if(!d||Date.now()-d.at>2*60*60*1000)return;step=Math.max(0,Math.min(7,d.step||0));values=d.values||{};name=d.name||'';phone=d.phone||'';mode=d.mode||'weekday';date=d.date||'';time=d.time||'';band=d.band||'';consented=!!d.consented;requestId=d.requestId||'';finished=!!d.finished;applicationReceived=!!d.applicationReceived;formStarted=!!d.formStarted||step>0;metaFormStartSent=!!d.metaFormStartSent;metaQuestionsCompleteSent=!!d.metaQuestionsCompleteSent;}catch(e){}}
+function remember(){try{sessionStorage.setItem(STORAGE_KEY,JSON.stringify({step,values,name,phone,mode,date,time,band,consented,requestId,finished,applicationReceived,formStarted,metaFormStartSent,metaQuestionsCompleteSent,cpFormStartAt,cpQuestionsCompleteAt,at:Date.now()}));}catch(e){}}
+function recover(){try{const d=JSON.parse(sessionStorage.getItem(STORAGE_KEY)||'null');if(!d||Date.now()-d.at>2*60*60*1000)return;step=Math.max(0,Math.min(7,d.step||0));values=d.values||{};name=d.name||'';phone=d.phone||'';mode=d.mode||'weekday';date=d.date||'';time=d.time||'';band=d.band||'';consented=!!d.consented;requestId=d.requestId||'';finished=!!d.finished;applicationReceived=!!d.applicationReceived;formStarted=!!d.formStarted||step>0;metaFormStartSent=!!d.metaFormStartSent;metaQuestionsCompleteSent=!!d.metaQuestionsCompleteSent;cpFormStartAt=d.cpFormStartAt||'';cpQuestionsCompleteAt=d.cpQuestionsCompleteAt||'';}catch(e){}}
 recover();
 function resetToTop(){
   if(submitting)return;
   if(step>0&&!finished&&!window.confirm('入力内容を破棄して最初の質問に戻りますか？'))return;
   step=0;values={};name='';phone='';mode='weekday';date='';time='';band='';
   error='';finished=false;applicationReceived=false;submitting=false;consented=false;requestId='';
-  formStarted=false;metaFormStartSent=false;metaQuestionsCompleteSent=false;eventStepSet.clear();
+  formStarted=false;metaFormStartSent=false;metaQuestionsCompleteSent=false;cpFormStartAt='';cpQuestionsCompleteAt='';eventStepSet.clear();
   try{sessionStorage.removeItem(STORAGE_KEY)}catch(e){}
   view();window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -68,7 +69,26 @@ const getParam=k=>params.get(k)||'';
 const metaLandingTime = Date.now();
 function getCookieValue(key){return document.cookie.split('; ').find(x=>x.startsWith(key+'='))?.slice(key.length+1)||'';}
 function buildFbc(fbclid){return fbclid?'fb.1.'+metaLandingTime+'.'+fbclid:'';}
-function sourceData(){const fbclid=getParam('fbclid');return {sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),fbclid,fbc:getCookieValue('_fbc')||buildFbc(fbclid),fbp:getCookieValue('_fbp'),client_user_agent:navigator.userAgent,ad_id:getParam('ad_id'),adset_id:getParam('adset_id')}}
+// Metaへ送る識別子とは別に、将来の差分分析用の受信時情報を保持する。
+function sourceData(){
+  const fbclid=getParam('fbclid');
+  const cookieFbc=getCookieValue('_fbc');
+  const fbp=getCookieValue('_fbp');
+  const navigation=performance.getEntriesByType?.('navigation')?.[0];
+  let referrerOrigin='';
+  try{if(document.referrer)referrerOrigin=new URL(document.referrer).origin;}catch(e){}
+  return {
+    sessionId:getSessionId(),pageUrl:location.href,utm_source:getParam('utm_source'),utm_medium:getParam('utm_medium'),
+    utm_campaign:getParam('utm_campaign'),utm_content:getParam('utm_content'),utm_term:getParam('utm_term'),
+    fbclid,fbc:cookieFbc||buildFbc(fbclid),fbp,client_user_agent:navigator.userAgent,
+    ad_id:getParam('ad_id'),adset_id:getParam('adset_id'),campaign_id:getParam('utm_id')||getParam('campaign_id'),
+    placement:getParam('placement'),landing_at:new Date(metaLandingTime).toISOString(),
+    form_start_at:cpFormStartAt,questions_complete_at:cpQuestionsCompleteAt,
+    fbc_origin:cookieFbc?'cookie':fbclid?'generated':'missing',
+    pixel_form_start_called:metaFormStartSent,pixel_questions_complete_called:metaQuestionsCompleteSent,
+    navigation_type:navigation?.type||'',referrer_origin:referrerOrigin
+  };
+}
 const allowedSlots=Array.from({length:18},(_,i)=>`${String(10+Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`).filter(t=>t<'19:00');
 const bands=[{label:'10:00〜12:00',start:'10:00',end:'12:00'},{label:'12:00〜14:00',start:'12:00',end:'14:00'},{label:'14:00〜16:00',start:'14:00',end:'16:00'},{label:'16:00〜19:00',start:'16:00',end:'19:00'}];const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateObj=(n)=>{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+n);return d};
@@ -105,12 +125,14 @@ function track(name,extra={}){
 }
 // Leadは送らない。ブラウザ側では、Lead前の中間シグナル2種類のみ追加。
 function trackMetaFormStartOnce(){
+  if(!cpFormStartAt)cpFormStartAt=new Date().toISOString();
   if(metaFormStartSent || typeof window.fbq !== 'function')return;
   window.fbq('trackCustom','FormStart');
   metaFormStartSent=true;
   remember();
 }
 function trackMetaQuestionsCompleteOnce(){
+  if(!cpQuestionsCompleteAt)cpQuestionsCompleteAt=new Date().toISOString();
   if(metaQuestionsCompleteSent || typeof window.fbq !== 'function')return;
   window.fbq('trackCustom','QuestionsComplete');
   metaQuestionsCompleteSent=true;
